@@ -19,7 +19,9 @@ const defaultSettings = {
         hideLastN: 0,
         lastProcessedLength: 0,
         userConfigured: false
-    }
+    },
+    // 是否在UI界面也隐藏楼层
+    hideInUI: false
 };
 
 // 缓存上下文
@@ -227,7 +229,11 @@ function loadSettings() {
         useGlobalSettings: extension_settings[extensionName].hasOwnProperty('useGlobalSettings') 
             ? extension_settings[extensionName].useGlobalSettings 
             : defaultSettings.useGlobalSettings,
-        globalHideSettings: extension_settings[extensionName].globalHideSettings || { ...defaultSettings.globalHideSettings }
+        globalHideSettings: extension_settings[extensionName].globalHideSettings || { ...defaultSettings.globalHideSettings },
+        // 是否在UI界面也隐藏楼层
+        hideInUI: extension_settings[extensionName].hasOwnProperty('hideInUI')
+            ? extension_settings[extensionName].hideInUI
+            : defaultSettings.hideInUI
     });
 
     // --- 检查并运行迁移 ---
@@ -312,6 +318,13 @@ function createPopup() {
         <div class="hide-helper-current">
             <strong>当前隐藏设置:</strong> <span id="hide-current-value">无</span>
         </div>
+        <div class="hide-helper-toggle-row" style="margin: 15px 0;">
+            <span class="hide-helper-label">是否在聊天界面隐藏楼层:</span>
+            <select id="hide-in-ui-toggle">
+                <option value="false">否</option>
+                <option value="true">是</option>
+            </select>
+        </div>
         <div class="hide-helper-popup-footer">
             <button id="hide-settings-type-btn" class="hide-helper-btn">聊天模式</button>
             <button id="hide-helper-popup-close" class="hide-helper-close-btn">关闭</button>
@@ -390,6 +403,31 @@ function saveCurrentHideSettings(hideLastN) {
 }
 
 
+// 应用UI界面隐藏楼层设置
+function applyHideInUISetting() {
+    console.log(`[${extensionName}] Entering applyHideInUISetting`);
+    const hideInUI = extension_settings[extensionName]?.hideInUI || false;
+    
+    // 移除可能已存在的样式
+    $('#hide-in-ui-style').remove();
+    
+    if (hideInUI) {
+        console.log(`[${extensionName}] Applying CSS to hide messages in UI`);
+        // 添加CSS样式，隐藏带有is_system属性的消息
+        const styleHtml = `
+        <style id="hide-in-ui-style">
+            .mes[is_system="true"] {
+                display: none !important;
+            }
+        </style>`;
+        $('head').append(styleHtml);
+    } else {
+        console.log(`[${extensionName}] Removing CSS, messages with is_system will be shown but greyed out`);
+        // 默认情况下，带有is_system的消息会显示但呈灰色 (SillyTavern自带行为)
+    }
+    console.log(`[${extensionName}] Exiting applyHideInUISetting`);
+}
+
 // 更新当前设置显示
 function updateCurrentHideSettingsDisplay() {
     console.debug(`[${extensionName} DEBUG] Entering updateCurrentHideSettingsDisplay.`);
@@ -415,6 +453,14 @@ function updateCurrentHideSettingsDisplay() {
         domCache.hideLastNInput.value = inputValue;
     } else {
         console.debug(`[${extensionName} DEBUG] updateCurrentHideSettingsDisplay: hideLastNInput element not in cache.`);
+    }
+    
+    // 更新是否在UI界面隐藏楼层的下拉框
+    const $hideInUIToggle = $('#hide-in-ui-toggle');
+    if ($hideInUIToggle.length) {
+        const hideInUI = extension_settings[extensionName]?.hideInUI || false;
+        console.debug(`[${extensionName} DEBUG] updateCurrentHideSettingsDisplay: Setting UI hide toggle to: "${hideInUI ? 'true' : 'false'}"`);
+        $hideInUIToggle.val(hideInUI ? 'true' : 'false');
     }
     
     // 更新设置类型选择框
@@ -1007,6 +1053,24 @@ function setupEventListeners() {
         await unhideAllMessages();
         console.log(`[${extensionName}] Unhide all process finished.`);
     });
+    
+    // 是否在UI界面隐藏楼层切换事件
+    console.log(`[${extensionName}] Setting up change listener for #hide-in-ui-toggle.`);
+    $('#hide-in-ui-toggle').on('change', function() {
+        const hideInUI = $(this).val() === 'true';
+        console.log(`[${extensionName}] Hide in UI toggle changed. New state: ${hideInUI ? 'yes' : 'no'}`);
+        
+        if (extension_settings[extensionName]) {
+            extension_settings[extensionName].hideInUI = hideInUI;
+            console.log(`[${extensionName}] Saving hideInUI setting: ${hideInUI}`);
+            saveSettingsDebounced();
+            
+            // 根据设置应用或移除CSS
+            applyHideInUISetting();
+            
+            toastr.success(`已${hideInUI ? '开启' : '关闭'}UI界面楼层隐藏`);
+        }
+    });
 
     // --- 核心事件监听 ---
 
@@ -1126,6 +1190,10 @@ jQuery(async () => {
         } else {
              console.log(`[${extensionName}] 初始设置: 插件已禁用。跳过初始全量检查。`); // 中文日志
         }
+        
+        // 5. 应用UI隐藏设置
+        console.log(`[${extensionName}] 初始设置: 应用UI界面隐藏楼层设置。`); // 中文日志
+        applyHideInUISetting();
         console.log(`[${extensionName}] 初始设置任务完成。`); // 中文日志
         // --- setTimeout 里面的代码结束 ---
     };
